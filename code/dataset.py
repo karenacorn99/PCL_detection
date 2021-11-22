@@ -1,7 +1,7 @@
 import torch
 from transformers import AutoTokenizer
 
-class PCLDataset:
+class PCLDatasetBaseline:
     def __init__(self, texts, labels, args):
         self.texts = texts
         self.labels = labels

@@ -6,13 +6,27 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import torch
 import os
 
-def process_data(data_dir, args):
+def process_data_task1(data_dir):
     data = pd.read_csv(data_dir)
     texts = data['text'].tolist()
     labels = data['label'].tolist()
-    # compute class weights
     class_weight = compute_class_weight('balanced', classes=np.unique(labels), y=labels)
     return texts, labels, torch.tensor(class_weight, dtype=torch.float)
+
+def process_data_task2(data_dir):
+    data = pd.read_csv(data_dir)
+    texts = data['text'].tolist()
+    label_matrix = np.array(data['label'].apply(lambda x : x[1:-1].strip().split()).tolist(), dtype=np.int64)
+    class_freq = np.apply_along_axis(lambda x : sum(x==1), 0, label_matrix)
+    # TODO: confirm balanced class weight
+    class_weight = np.sum(class_freq) / 7 * class_freq.astype(np.float64)
+    return texts, label_matrix, torch.tensor(class_weight, dtype=torch.float)
+
+def softmax(logits):
+    return np.exp(logits) / np.sum(np.exp(logits))
+
+def sigmoid(logits):
+    return 1 / (1 + np.exp(-logits))
 
 def train(dataloader, model, device, optimizer, scheduler, class_weight):
     model.train()
@@ -38,78 +52,172 @@ def train(dataloader, model, device, optimizer, scheduler, class_weight):
 
     return output_loss
 
-def evaluate(dataloader, model, device, class_weight):
+def evaluate(dataloader, model, device, class_weight, task):
     model.eval()
     print('Evaluation mode')
     output_loss = 0
 
-    y_true = []
-    y_pred = []
+    if task == 1:
+        y_true = []
+        y_pred = []
 
-    for data in tqdm(dataloader, total=len(dataloader)):
-        for k, v in data.items():
-            data[k] = v.to(device)
-        y_true.extend(data['labels'].cpu().numpy())
-        class_weight = class_weight.to(device)
-        logits, loss = model(input_ids=data['input_ids'],
-                             attention_mask=data['attention_mask'],
-                             labels=data['labels'],
-                             class_weight=class_weight)
-        logits = logits.detach().cpu().numpy()
-        y_pred.extend(np.argmax(logits, axis=1))
-        output_loss += loss.item()
+        for data in tqdm(dataloader, total=len(dataloader)):
+            for k, v in data.items():
+                data[k] = v.to(device)
+            y_true.extend(data['labels'].cpu().numpy())
+            class_weight = class_weight.to(device)
+            logits, loss = model(input_ids=data['input_ids'],
+                                 attention_mask=data['attention_mask'],
+                                 labels=data['labels'],
+                                 class_weight=class_weight)
+            logits = logits.detach().cpu().numpy()
+            y_pred.extend(np.argmax(logits, axis=1))
+            output_loss += loss.item()
 
-    output_loss = output_loss / len(dataloader)
+        output_loss = output_loss / len(dataloader)
 
-    # get metrics
-    performance_metric = {'accuracy': accuracy_score(y_true, y_pred),
-                          'precision': precision_score(y_true, y_pred, pos_label=1, average='binary'),
-                          'recall': recall_score(y_true, y_pred, pos_label=1, average='binary'),
-                          'f1': f1_score(y_true, y_pred, pos_label=1, average='binary')}
+        performance_metric = {'accuracy': accuracy_score(y_true, y_pred),
+                              'precision': precision_score(y_true, y_pred, pos_label=1, average='binary'),
+                              'recall': recall_score(y_true, y_pred, pos_label=1, average='binary'),
+                              'f1': f1_score(y_true, y_pred, pos_label=1, average='binary')}
+
+    elif task == 2:
+        y_true = []
+        y_pred = []
+
+        for data in tqdm(dataloader, total=len(dataloader)):
+            for k, v in data.items():
+                data[k] = v.to(device)
+            y_true.extend(data['labels'].cpu().numpy())
+            class_weight = class_weight.to(device)
+            logits, loss = model(input_ids=data['input_ids'],
+                                 attention_mask=data['attention_mask'],
+                                 labels=data['labels'],
+                                 class_weight=class_weight)
+            logits = logits.detach().cpu().numpy()
+            logits = sigmoid(logits)
+
+            for logit in logits:
+                y_pred.append(list(map(lambda x : 1 if x > 0.5 else 0, logit))) # TODO: confirm criterion
+
+            output_loss += loss.item()
+
+        output_loss = output_loss / len(dataloader)
+
+        y_true = np.array(y_true)
+        y_pred = np.array(y_pred)
+
+        performance_metric = {}
+        for i in range(7):
+            class_metric = {}
+            f1_scores = []
+            class_metric['precision'] = precision_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+            class_metric['recall'] = recall_score(y_true[:, i], y_pred[:, i], pos_label=1,  average='binary')
+            f1 = f1_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+            class_metric['f1'] = f1
+            f1_scores.append(f1)
+            performance_metric[f'class {i}'] = class_metric
+            performance_metric['macro f1'] = np.mean(f1_scores)
 
     return output_loss, performance_metric
 
-def test(dataloader, model, device, class_weight, test_texts, test_labels, output_dir):
+def test(dataloader, model, device, class_weight, test_texts, test_labels, output_dir, task):
     model.eval()
     print('Test mode')
     output_loss = 0
 
-    y_true = []
-    y_pred = []
+    if task == 1:
+        y_true = []
+        y_pred = []
 
-    logits_dim_0 = []
-    logits_dim_1 = []
+        logits_dim_0 = []
+        logits_dim_1 = []
 
-    for data in tqdm(dataloader, total=len(dataloader)):
-        for k, v in data.items():
-            data[k] = v.to(device)
-        y_true.extend(data['labels'].cpu().numpy())
-        class_weight = class_weight.to(device)
-        logits, loss = model(input_ids=data['input_ids'],
-                             attention_mask=data['attention_mask'],
-                             labels=data['labels'],
-                             class_weight=class_weight)
-        logits = logits.detach().cpu().numpy()
-        y_pred.extend(np.argmax(logits, axis=1))
-        # TODO: normalize logits
-        logits_dim_0.extend(logits[:, 0])
-        logits_dim_1.extend(logits[:, 1])
-        output_loss += loss.item()
+        for data in tqdm(dataloader, total=len(dataloader)):
+            for k, v in data.items():
+                data[k] = v.to(device)
+            y_true.extend(data['labels'].cpu().numpy())
+            class_weight = class_weight.to(device)
+            logits, loss = model(input_ids=data['input_ids'],
+                                 attention_mask=data['attention_mask'],
+                                 labels=data['labels'],
+                                 class_weight=class_weight)
+            logits = logits.detach().cpu().numpy()
+            logits = np.apply_along_axis(softmax, 1, logits)
+            y_pred.extend(np.argmax(logits, axis=1))
+            logits_dim_0.extend(logits[:, 0])
+            logits_dim_1.extend(logits[:, 1])
+            output_loss += loss.item()
 
-    output_loss = output_loss / len(dataloader)
+        output_loss = output_loss / len(dataloader)
 
-    # get metrics
-    performance_metric = {'accuracy': accuracy_score(y_true, y_pred),
-                          'precision': precision_score(y_true, y_pred, pos_label=1, average='binary'),
-                          'recall': recall_score(y_true, y_pred, pos_label=1, average='binary'),
-                          'f1': f1_score(y_true, y_pred, pos_label=1, average='binary')}
+        # get metrics
+        performance_metric = {'accuracy': accuracy_score(y_true, y_pred),
+                              'precision': precision_score(y_true, y_pred, pos_label=1, average='binary'),
+                              'recall': recall_score(y_true, y_pred, pos_label=1, average='binary'),
+                              'f1': f1_score(y_true, y_pred, pos_label=1, average='binary')}
 
-    prediction_df = pd.DataFrame({'text': test_texts, 'y_true': test_labels,
-                                  'y_pred': y_pred, 'logits_dim_0': logits_dim_0, 'logits_dim_1': logits_dim_1})
+        # write output file
+        prediction_df = pd.DataFrame({'text': test_texts, 'y_true': test_labels,
+                                      'y_pred': y_pred, 'logits_dim_0': logits_dim_0, 'logits_dim_1': logits_dim_1})
 
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
-    prediction_df.to_csv(output_dir + 'prediction.csv', index=False)
+        prediction_df.to_csv(output_dir + 'prediction.csv', index=False)
+
+    elif task == 2:
+        y_true = []
+        y_pred = []
+
+        sigmoid_logits = []
+
+        for data in tqdm(dataloader, total=len(dataloader)):
+            for k, v in data.items():
+                data[k] = v.to(device)
+            y_true.extend(data['labels'].cpu().numpy())
+            class_weight = class_weight.to(device)
+            logits, loss = model(input_ids=data['input_ids'],
+                                 attention_mask=data['attention_mask'],
+                                 labels=data['labels'],
+                                 class_weight=class_weight)
+            logits = logits.detach().cpu().numpy()
+            logits = sigmoid(logits)
+            sigmoid_logits.extend(logits)
+
+            for logit in logits:
+                y_pred.append(list(map(lambda x: 1 if x > 0.5 else 0, logit)))  # TODO: confirm criterion
+
+            output_loss += loss.item()
+
+        output_loss = output_loss / len(dataloader)
+
+        y_true = np.array(y_true)
+        y_pred = np.array(y_pred)
+
+        performance_metric = {}
+        for i in range(7):
+            class_metric = {}
+            f1_scores = []
+            class_metric['precision'] = precision_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+            class_metric['recall'] = recall_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+            f1 = f1_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+            class_metric['f1'] = f1
+            f1_scores.append(f1)
+            performance_metric[f'class {i}'] = class_metric
+            performance_metric['macro f1'] = np.mean(f1_scores)
+
+        y_true = np.apply_along_axis(lambda x : str(x), 1, y_true)
+        y_pred = np.apply_along_axis(lambda x : str(x), 1, y_pred)
+        sigmoid_logits = np.apply_along_axis(lambda x : str(x), 1, sigmoid_logits)
+
+        # write output file
+        prediction_df = pd.DataFrame({'text': test_texts, 'y_true': y_true,
+                                      'y_pred': y_pred, 'sigmoid_logits': sigmoid_logits})
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        prediction_df.to_csv(output_dir + 'prediction.csv', index=False)
 
     return output_loss, performance_metric
