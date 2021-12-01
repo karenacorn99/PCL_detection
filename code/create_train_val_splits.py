@@ -49,4 +49,13 @@ if __name__ == '__main__':
     task2_train.to_csv('../data/split_baseline/task2_train.csv', index=False)
     task2_val.to_csv('../data/split_baseline/task2_val.csv', index=False)
 
+    # create toy examples for model development
+    # Task 1: select 50 samples for each class
+    task1_toy_df = task1_train.groupby('label').sample(n=50, random_state=1)
+    # Task 2: select 100 samples in total, regardless of labels
+    task2_toy_df = task2_train.sample(n=100, random_state=1)
+
+    task1_toy_df.to_csv('../data/new_toy_baseline/task1.csv')
+    task2_toy_df.to_csv('../data/new_toy_baseline/task2.csv')
+
 

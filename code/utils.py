@@ -5,6 +5,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import torch
 import os
+import ast
 
 def process_data_task1(data_dir):
     data = pd.read_csv(data_dir)
@@ -16,7 +17,8 @@ def process_data_task1(data_dir):
 def process_data_task2(data_dir):
     data = pd.read_csv(data_dir)
     texts = data['text'].tolist()
-    label_matrix = np.array(data['label'].apply(lambda x : x[1:-1].strip().split()).tolist(), dtype=np.int64)
+    #label_matrix = np.array(data['label'].apply(lambda x : x[1:-1].strip().split()).tolist(), dtype=np.int64)
+    label_matrix = np.array(data['label_in_split_file'].apply(lambda x : ast.literal_eval(x)).tolist(), dtype=np.int64)
     class_freq = np.apply_along_axis(lambda x : sum(x==1), 0, label_matrix)
     # TODO: confirm balanced class weight
     class_weight = np.sum(class_freq) / 7 * class_freq.astype(np.float64)
