@@ -2,7 +2,6 @@ from transformers import AutoTokenizer
 import torch
 import numpy as np
 
-
 # features is a list of dictionaries
 # [{'text': text, 'label':label}]
 def data_collator_baseline(features, args):

@@ -25,6 +25,7 @@ def get_parser():
     parser.add_argument('--do_train', action='store_true', default=False)
     parser.add_argument('--model_dir', type=str, default='./output/model/')
     parser.add_argument('--output_dir', type=str, default='./output/pred/')
+    parser.add_argument('--submission_dir', type=str, default='./output/submission/')
     return parser
 
 if __name__ == '__main__':
@@ -39,7 +40,6 @@ if __name__ == '__main__':
         train_dataset = PCLDatasetBaseline(train_texts, train_labels, args)
         validation_dataset = PCLDatasetBaseline(validation_texts, validation_labels, args)
         test_dataset = PCLDatasetBaseline(test_texts, test_labels, args)
-
 
     elif args.task == 2:
         train_texts, train_labels, class_weight = process_data_task2(args.train_data_dir)
@@ -103,7 +103,7 @@ if __name__ == '__main__':
             best_model = Task2Baseline(args)
 
     print('Loading best model')
-    best_model.load_state_dict(torch.load(args.model_dir + 'model2.bin'))
+    best_model.load_state_dict(torch.load(args.model_dir + 'model.bin'))
     best_model.to(device)
 
-    test_loss, test_performance_metric = test(test_dataloader, best_model, device, class_weight, test_texts, test_labels, args.output_dir, args.task)
+    test_loss, test_performance_metric = test(test_dataloader, best_model, device, class_weight, test_texts, test_labels, args.output_dir, args.task, args.submission_dir)

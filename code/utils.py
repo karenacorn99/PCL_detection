@@ -121,7 +121,7 @@ def evaluate(dataloader, model, device, class_weight, task):
 
     return output_loss, performance_metric
 
-def test(dataloader, model, device, class_weight, test_texts, test_labels, output_dir, task):
+def test(dataloader, model, device, class_weight, test_texts, test_labels, output_dir, task, submission_dir):
     model.eval()
     print('Test mode')
     output_loss = 0
@@ -165,6 +165,13 @@ def test(dataloader, model, device, class_weight, test_texts, test_labels, outpu
             os.makedirs(output_dir)
 
         prediction_df.to_csv(output_dir + 'prediction.csv', index=False)
+
+        # write to submission file
+        if not os.path.exists(submission_dir):
+            os.makedirs(submission_dir)
+
+        with open(submission_dir + 'task1.txt', 'w') as f:
+            f.write('\n'.join(np.array(y_pred).astype(str)))
 
     elif task == 2:
         y_true = []
@@ -219,5 +226,12 @@ def test(dataloader, model, device, class_weight, test_texts, test_labels, outpu
             os.makedirs(output_dir)
 
         prediction_df.to_csv(output_dir + 'prediction.csv', index=False)
+
+        # write to submission file
+        if not os.path.exists(submission_dir):
+            os.makedirs(submission_dir)
+
+        with open(submission_dir + 'task2.txt', 'w') as f:
+            f.write('\n'.join(y_pred))
 
     return output_loss, performance_metric
