@@ -77,16 +77,25 @@ if __name__ == '__main__':
     # #ner_df.to_csv('../raw_data/task2_ner_tags.csv', index=False)
 
     # create toy data for testing model functionality
-    file = '../raw_data/task2_ner_tags_updated.csv'
-    df = pd.read_csv(file)
+    # file = '../raw_data/task2_ner_tags_updated.csv'
+    # df = pd.read_csv(file)
+    #
+    # par_179 = df[df['par_id'] == 179].iloc[0]
+    # print(len(par_179['text'].split()))
+    # print(len(ast.literal_eval(par_179['ner_labels'])))
+    #
+    # for _, row in df.iterrows():
+    #     assert len(row['text'].split()) == len(ast.literal_eval(row['ner_labels']))
+    #
+    # # create toy set
+    # ner_df = df.sample(n=100, random_state=1)
+    # ner_df.to_csv('../data/ner_toy/task2.csv', index=False)
 
-    par_179 = df[df['par_id'] == 179].iloc[0]
-    print(len(par_179['text'].split()))
-    print(len(ast.literal_eval(par_179['ner_labels'])))
-
-    for _, row in df.iterrows():
-        assert len(row['text'].split()) == len(ast.literal_eval(row['ner_labels']))
-
-    # create toy set
-    ner_df = df.sample(n=100, random_state=1)
-    ner_df.to_csv('../data/ner_toy/task2.csv', index=False)
+    # convert text to list of tokens
+    files = ['../data/split_ner/task2_train.csv', '../data/split_ner/task2_val.csv', '../data/ner_toy/task2.csv']
+    for file in files:
+        df = pd.read_csv(file)
+        df['tokens'] = df['text'].apply(lambda x : x.split())
+        for _, row in df.iterrows():
+            assert len(ast.literal_eval(row['ner_labels'])) == len(row['tokens'])
+        df.to_csv(file, index=False)

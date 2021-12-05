@@ -52,3 +52,4 @@ class Task2Baseline(nn.Module):
         loss = loss_fct(logits, labels.float())
 
         return logits, loss
+
