@@ -17,6 +17,7 @@ if __name__ == '__main__':
 
     task1_data_file = '../data/full_baseline/task1.csv'
     task2_data_file = '../data/full_baseline/task2.csv'
+    #task2_data_file = '../raw_data/task2_ner_tags_updated.csv'
 
     task1_df = pd.read_csv(task1_data_file)
     task2_df = pd.read_csv(task2_data_file)
@@ -48,6 +49,8 @@ if __name__ == '__main__':
 
     task2_train.to_csv('../data/split_baseline/task2_train.csv', index=False)
     task2_val.to_csv('../data/split_baseline/task2_val.csv', index=False)
+    #task2_train.to_csv('../data/split_ner/task2_train.csv', index=False)
+    #task2_val.to_csv('../data/split_ner/task2_val.csv', index=False)
 
     # create toy examples for model development
     # Task 1: select 50 samples for each class
