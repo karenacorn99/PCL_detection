@@ -1,28 +1,28 @@
 import argparse
-from modeling import Task1Baseline, Task2Baseline
+from modeling import Task1Baseline, Task2Baseline, Task2MultiClassTokenClassifier
 from dataset import PCLDatasetBaseline
-from utils import process_data_task1, process_data_task2, train, evaluate, test
+from utils import process_data_task1, process_data_task2, process_data_multi_class_token, train, evaluate, test
 import torch
 from torch.utils.data import DataLoader
 from transformers import AdamW, get_linear_schedule_with_warmup, AutoTokenizer
 import os
 import numpy as np
-from data_collator import data_collator_baseline
+from data_collator import data_collator_baseline, data_collator_multi_class_token
 
 
 def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--pretrained_model', type=str, default='roberta-base')
     parser.add_argument('--task', type=int, default=2)
-    parser.add_argument('--config', type=str, default='baseline')
+    parser.add_argument('--config', type=str, default='multi-class-token')
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--epoch', type=int, default=2)
     parser.add_argument('--learning_rate', type=float, default=2e-5)
     parser.add_argument('--max_length', type=int, default=128)
-    parser.add_argument('--train_data_dir', type=str, default='../data/new_toy_baseline/task2.csv')
-    parser.add_argument('--validation_data_dir', type=str, default='../data/new_toy_baseline/task2.csv')
-    parser.add_argument('--test_data_dir', type=str, default='../data/new_toy_baseline/task2.csv')
-    parser.add_argument('--do_train', action='store_true', default=False)
+    parser.add_argument('--train_data_dir', type=str, default='../data/ner_toy/task2.csv')
+    parser.add_argument('--validation_data_dir', type=str, default='../data/ner_toy/task2.csv')
+    parser.add_argument('--test_data_dir', type=str, default='../data/ner_toy/task2.csv')
+    parser.add_argument('--do_train', action='store_true', default=True)
     parser.add_argument('--model_dir', type=str, default='./output/model/')
     parser.add_argument('--output_dir', type=str, default='./output/pred/')
     parser.add_argument('--submission_dir', type=str, default='./output/submission/')
@@ -42,17 +42,27 @@ if __name__ == '__main__':
         test_dataset = PCLDatasetBaseline(test_texts, test_labels, args)
 
     elif args.task == 2:
-        train_texts, train_labels, class_weight = process_data_task2(args.train_data_dir)
-        validation_texts, validation_labels, _ = process_data_task2(args.validation_data_dir)
-        test_texts, test_labels, _ = process_data_task2(args.test_data_dir)
+        if args.config == 'baseline':
+            train_texts, train_labels, class_weight = process_data_task2(args.train_data_dir)
+            validation_texts, validation_labels, _ = process_data_task2(args.validation_data_dir)
+            test_texts, test_labels, _ = process_data_task2(args.test_data_dir)
+        elif args.config == 'multi-class-token':
+            train_texts, train_labels, class_weight = process_data_multi_class_token(args.train_data_dir)
+            validation_texts, validation_labels, _ = process_data_multi_class_token(args.validation_data_dir)
+            test_texts, test_labels, _ = process_data_multi_class_token(args.test_data_dir)
 
         train_dataset = PCLDatasetBaseline(train_texts, train_labels, args)
         validation_dataset = PCLDatasetBaseline(validation_texts, validation_labels, args)
         test_dataset = PCLDatasetBaseline(test_texts, test_labels, args)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, collate_fn=lambda x: data_collator_baseline(x, args), shuffle=True)
-    validation_dataloader = DataLoader(validation_dataset, batch_size=args.batch_size, collate_fn=lambda x: data_collator_baseline(x, args))
-    test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=lambda x: data_collator_baseline(x, args))
+    if args.config == 'baseline':
+        collate_fn = lambda x : data_collator_baseline(x, args)
+    elif args.config == 'multi-class-token':
+        collate_fn = lambda x : data_collator_multi_class_token(x, args)
+
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, collate_fn=collate_fn, shuffle=True)
+    validation_dataloader = DataLoader(validation_dataset, batch_size=args.batch_size, collate_fn=collate_fn)
+    test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device {device}')
@@ -65,6 +75,8 @@ if __name__ == '__main__':
         elif args.task == 2:
             if args.config == 'baseline':
                 model = Task2Baseline(args)
+            elif args.config == 'multi-class-token':
+                model = Task2MultiClassTokenClassifier(args)
 
         model.to(device)
 
@@ -77,6 +89,7 @@ if __name__ == '__main__':
         best_metric = 0
         for epoch in range(args.epoch):
             train_loss = train(train_dataloader, model, device, optimizer, scheduler, class_weight)
+            print("train loss", train_loss)
             #post_train_loss, _ = evaluate(train_dataloader, model, device, class_weight, args.task)
             validation_loss, validation_performance_metric = evaluate(validation_dataloader, model, device, class_weight, args.task)
             print(f"Epoch = {epoch+1} Train Loss = {train_loss} Validation Loss = {validation_loss}")

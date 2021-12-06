@@ -16,6 +16,7 @@ def process_data_task1(data_dir):
 
 def process_data_task2(data_dir):
     data = pd.read_csv(data_dir)
+    print(data.columns)
     texts = data['text'].tolist()
     #label_matrix = np.array(data['label'].apply(lambda x : x[1:-1].strip().split()).tolist(), dtype=np.int64)
     label_matrix = np.array(data['label_in_split_file'].apply(lambda x : ast.literal_eval(x)).tolist(), dtype=np.int64)
@@ -23,6 +24,12 @@ def process_data_task2(data_dir):
     # TODO: confirm balanced class weight
     class_weight = np.sum(class_freq) / 7 * class_freq.astype(np.float64)
     return texts, label_matrix, torch.tensor(class_weight, dtype=torch.float)
+
+def process_data_multi_class_token(data_dir):
+    data = pd.read_csv(data_dir)
+    text_tokens = data['tokens'].apply(lambda x : ast.literal_eval(x)).tolist()
+    ner_tags = data['ner_labels'].apply(lambda x : ast.literal_eval(x)).tolist()
+    return text_tokens, ner_tags, None
 
 def softmax(logits):
     return np.exp(logits) / np.sum(np.exp(logits))
@@ -39,7 +46,8 @@ def train(dataloader, model, device, optimizer, scheduler, class_weight):
     for data in tqdm(dataloader, total=len(dataloader)):
         for k, v in data.items():
             data[k] = v.to(device)
-        class_weight = class_weight.to(device)
+        if class_weight is not None:
+            class_weight = class_weight.to(device)
         optimizer.zero_grad()
         logits, loss = model(input_ids=data['input_ids'],
                              attention_mask=data['attention_mask'],
