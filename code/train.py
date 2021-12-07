@@ -15,14 +15,14 @@ def get_parser():
     parser.add_argument('--pretrained_model', type=str, default='roberta-base')
     parser.add_argument('--task', type=int, default=2)
     parser.add_argument('--config', type=str, default='multi-class-token')
-    parser.add_argument('--batch_size', type=int, default=8)
+    parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--epoch', type=int, default=2)
     parser.add_argument('--learning_rate', type=float, default=2e-5)
     parser.add_argument('--max_length', type=int, default=128)
     parser.add_argument('--train_data_dir', type=str, default='../data/ner_toy/task2.csv')
     parser.add_argument('--validation_data_dir', type=str, default='../data/ner_toy/task2.csv')
     parser.add_argument('--test_data_dir', type=str, default='../data/ner_toy/task2.csv')
-    parser.add_argument('--do_train', action='store_true', default=True)
+    parser.add_argument('--do_train', action='store_true', default=False)
     parser.add_argument('--model_dir', type=str, default='./output/model/')
     parser.add_argument('--output_dir', type=str, default='./output/pred/')
     parser.add_argument('--submission_dir', type=str, default='./output/submission/')
@@ -91,7 +91,7 @@ if __name__ == '__main__':
             train_loss = train(train_dataloader, model, device, optimizer, scheduler, class_weight)
             print("train loss", train_loss)
             #post_train_loss, _ = evaluate(train_dataloader, model, device, class_weight, args.task)
-            validation_loss, validation_performance_metric = evaluate(validation_dataloader, model, device, class_weight, args.task)
+            validation_loss, validation_performance_metric = evaluate(validation_dataloader, model, device, class_weight, args.task, args)
             print(f"Epoch = {epoch+1} Train Loss = {train_loss} Validation Loss = {validation_loss}")
             print(validation_performance_metric)
 
@@ -109,14 +109,18 @@ if __name__ == '__main__':
     # test loop
     print('Running test loop')
     if args.task == 1:
-        if args.config == 'baseline':
-            best_model = Task1Baseline(args)
+         if args.config == 'baseline':
+             best_model = Task1Baseline(args)
     elif args.task == 2:
-        if args.config == 'baseline':
-            best_model = Task2Baseline(args)
+         if args.config == 'baseline':
+             best_model = Task2Baseline(args)
+         elif args.config == 'multi-class-token':
+             best_model = Task2MultiClassTokenClassifier(args)
 
     print('Loading best model')
     best_model.load_state_dict(torch.load(args.model_dir + 'model.bin'))
     best_model.to(device)
 
-    test_loss, test_performance_metric = test(test_dataloader, best_model, device, class_weight, test_texts, test_labels, args.output_dir, args.task, args.submission_dir)
+    test_loss, test_performance_metric = test(test_dataloader, best_model, device, class_weight, test_texts, test_labels, args.output_dir, args.task, args.submission_dir, args)
+    print(test_loss)
+    print(test_performance_metric)

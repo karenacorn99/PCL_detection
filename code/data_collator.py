@@ -33,15 +33,13 @@ def data_collator_multi_class_token(features, args):
     tags = list(map(token_label2id, tags))
 
     tokenized_inputs = tokenizer(tokens, truncation=True, padding=True, is_split_into_words=True)
-    print(tokenized_inputs)
-    print("max length", args.max_length)
 
     label_all_tokens = True
 
     aligned_labels = []
     for i, label in enumerate(tags):
         word_ids = tokenized_inputs.word_ids(batch_index=i)
-        print(word_ids)
+        #print(word_ids)
         previous_word_idx = None
         labels_ids = []
         for word_idx in word_ids:
@@ -58,11 +56,11 @@ def data_collator_multi_class_token(features, args):
     for k, v in tokenized_inputs.items():
         tokenized_inputs[k] = torch.tensor(v)
     tokenized_inputs['labels'] = torch.tensor(aligned_labels)
-    print(type(tokenized_inputs['input_ids']))
-    print(type(tokenized_inputs['labels']))
+    #print(tokenized_inputs['input_ids'])
+    #print(tokenized_inputs['labels'])
 
     for i in range(len(features)):
         assert len(tokenized_inputs['input_ids'][i]) == len(tokenized_inputs['labels'][i])
-        print(len(tokenized_inputs['input_ids'][i]), len(tokenized_inputs['labels'][i]))
+        #print(len(tokenized_inputs['input_ids'][i]), len(tokenized_inputs['labels'][i]))
 
     return tokenized_inputs

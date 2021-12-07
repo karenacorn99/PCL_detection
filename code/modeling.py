@@ -26,8 +26,6 @@ class Task1Baseline(nn.Module):
         loss_fct = CrossEntropyLoss(class_weight)
         loss = loss_fct(logits, labels)
 
-        print(logits.shape)
-        print(labels.shape)
 
         return logits, loss
 
@@ -52,8 +50,6 @@ class Task2Baseline(nn.Module):
         loss_fct = BCEWithLogitsLoss(class_weight)
         loss = loss_fct(logits, labels.float())
 
-        print(logits.shape)
-        print(labels.shape)
 
         return logits, loss
 
@@ -74,12 +70,8 @@ class Task2MultiClassTokenClassifier(nn.Module):
         sequence_output = self.dropout(sequence_output)
         logits = self.classifier(sequence_output)
 
-        print(logits.shape)
-        print(logits.view(-1, self.num_classes).shape)
-        print(labels.shape)
-        print(labels.float().view(-1).shape)
-
         loss = None
+        # TODO: check what happens to -100 label
         if labels is not None:
             loss_fct = CrossEntropyLoss()
             loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1))

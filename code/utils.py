@@ -16,7 +16,6 @@ def process_data_task1(data_dir):
 
 def process_data_task2(data_dir):
     data = pd.read_csv(data_dir)
-    print(data.columns)
     texts = data['text'].tolist()
     #label_matrix = np.array(data['label'].apply(lambda x : x[1:-1].strip().split()).tolist(), dtype=np.int64)
     label_matrix = np.array(data['label_in_split_file'].apply(lambda x : ast.literal_eval(x)).tolist(), dtype=np.int64)
@@ -62,7 +61,7 @@ def train(dataloader, model, device, optimizer, scheduler, class_weight):
 
     return output_loss
 
-def evaluate(dataloader, model, device, class_weight, task):
+def evaluate(dataloader, model, device, class_weight, task, args):
     model.eval()
     print('Evaluation mode')
     output_loss = 0
@@ -92,46 +91,131 @@ def evaluate(dataloader, model, device, class_weight, task):
                               'f1': f1_score(y_true, y_pred, pos_label=1, average='binary')}
 
     elif task == 2:
-        y_true = []
-        y_pred = []
 
-        for data in tqdm(dataloader, total=len(dataloader)):
-            for k, v in data.items():
-                data[k] = v.to(device)
-            y_true.extend(data['labels'].cpu().numpy())
-            class_weight = class_weight.to(device)
-            logits, loss = model(input_ids=data['input_ids'],
-                                 attention_mask=data['attention_mask'],
-                                 labels=data['labels'],
-                                 class_weight=class_weight)
-            logits = logits.detach().cpu().numpy()
-            logits = sigmoid(logits)
+        if args.config == 'baseline':
+            y_true = []
+            y_pred = []
 
-            for logit in logits:
-                y_pred.append(list(map(lambda x : 1 if x > 0.5 else 0, logit))) # TODO: confirm criterion
+            for data in tqdm(dataloader, total=len(dataloader)):
+                for k, v in data.items():
+                    data[k] = v.to(device)
+                y_true.extend(data['labels'].cpu().numpy())
+                if class_weight is not None:
+                    class_weight = class_weight.to(device)
+                logits, loss = model(input_ids=data['input_ids'],
+                                     attention_mask=data['attention_mask'],
+                                     labels=data['labels'],
+                                     class_weight=class_weight)
+                logits = logits.detach().cpu().numpy()
+                logits = sigmoid(logits)
 
-            output_loss += loss.item()
+                for logit in logits:
+                    y_pred.append(list(map(lambda x : 1 if x > 0.5 else 0, logit))) # TODO: confirm criterion
 
-        output_loss = output_loss / len(dataloader)
+                output_loss += loss.item()
 
-        y_true = np.array(y_true)
-        y_pred = np.array(y_pred)
+            output_loss = output_loss / len(dataloader)
 
-        performance_metric = {}
-        for i in range(7):
-            class_metric = {}
-            f1_scores = []
-            class_metric['precision'] = precision_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
-            class_metric['recall'] = recall_score(y_true[:, i], y_pred[:, i], pos_label=1,  average='binary')
-            f1 = f1_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
-            class_metric['f1'] = f1
-            f1_scores.append(f1)
-            performance_metric[f'class {i}'] = class_metric
-            performance_metric['macro f1'] = np.mean(f1_scores)
+            y_true = np.array(y_true)
+            y_pred = np.array(y_pred)
+
+            performance_metric = {}
+            for i in range(7):
+                class_metric = {}
+                f1_scores = []
+                class_metric['precision'] = precision_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+                class_metric['recall'] = recall_score(y_true[:, i], y_pred[:, i], pos_label=1,  average='binary')
+                f1 = f1_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+                class_metric['f1'] = f1
+                f1_scores.append(f1)
+                performance_metric[f'class {i}'] = class_metric
+                performance_metric['macro f1'] = np.mean(f1_scores)
+        elif args.config == 'multi-class-token':
+            y_true = []
+            y_pred = []
+
+            for data in tqdm(dataloader, total=len(dataloader)):
+                for k, v in data.items():
+                    data[k] = v.to(device)
+                #y_true.extend(data['labels'].cpu().numpy())
+                if class_weight is not None:
+                    class_weight = class_weight.to(device)
+                logits, loss = model(input_ids=data['input_ids'],
+                                     attention_mask=data['attention_mask'],
+                                     labels=data['labels'],
+                                     class_weight=class_weight)
+                logits = logits.detach().cpu().numpy()
+                predictions = np.argmax(logits, axis=2)
+                #print(predictions)
+                #print(predictions.shape)
+
+                # remove ignored index (special tokens)
+                labels = data['labels'].cpu().numpy()
+                true_labels = [[l for l in label if l != -100] for label in labels]
+                #print(true_labels)
+                y_true.extend(true_labels)
+
+                predictions = [
+                    [p for p, l in zip(prediction, label) if l != -100]
+                    for prediction, label in zip(predictions, true_labels)
+                ]
+                #print(predictions)
+                y_pred.extend(predictions)
+
+            #print(len(y_true), len(y_pred))
+            for i in range(len(y_true)):
+                assert len(y_true[i]) == len(y_pred[i])
+                #print(len(y_true[i]), len(y_pred[i]))
+
+            # transform to vector labels
+            true_vector_labels = list(map(get_vector_label, y_true))
+            predicted_vector_labels = list(map(get_vector_label, y_pred))
+            y_true = np.array(true_vector_labels)
+            y_pred = np.array(predicted_vector_labels)
+            #print(y_true)
+            #print(y_pred)
+
+            performance_metric = {}
+            for i in range(7):
+                class_metric = {}
+                f1_scores = []
+                class_metric['precision'] = precision_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+                class_metric['recall'] = recall_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+                f1 = f1_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+                class_metric['f1'] = f1
+                f1_scores.append(f1)
+                performance_metric[f'class {i}'] = class_metric
+                performance_metric['macro f1'] = np.mean(f1_scores)
 
     return output_loss, performance_metric
 
-def test(dataloader, model, device, class_weight, test_texts, test_labels, output_dir, task, submission_dir):
+def get_vector_label(token_preds):
+    id2label = {0: 'O',
+                1: 'B-Unbalanced_power_relations', 2: 'I-Unbalanced_power_relations',
+                3: 'B-Shallow_solution', 4: 'I-Shallow_solution',
+                5: 'B-Presupposition', 6: 'I-Presupposition',
+                7: 'B-Authority_voice', 8: 'I-Authority_voice',
+                9: 'B-Metaphors', 10: 'I-Metaphors',
+                11: 'B-Compassion', 12: 'I-Compassion',
+                13: 'B-The_poorer_the_merrier', 14: 'I-The_poorer_the_merrier'}
+    label_to_position = {'Unbalanced_power_relations':0,
+				         'Shallow_solution':1,
+				         'Presupposition':2,
+				         'Authority_voice':3,
+				         'Metaphors':4,
+				         'Compassion':5,
+				         'The_poorer_the_merrier':6}
+
+    predicted = set([id2label[pred][2:] for pred in token_preds if pred != 0])
+    #print(predicted)
+    vector_label = [0] * 7
+
+    for p in predicted:
+        vector_label[label_to_position[p]] = 1
+
+    return vector_label
+
+def test(dataloader, model, device, class_weight, test_texts, test_labels, output_dir, task, submission_dir, args):
     model.eval()
     print('Test mode')
     output_loss = 0
@@ -184,64 +268,138 @@ def test(dataloader, model, device, class_weight, test_texts, test_labels, outpu
             f.write('\n'.join(np.array(y_pred).astype(str)))
 
     elif task == 2:
-        y_true = []
-        y_pred = []
+        if args.config == 'baseline':
+            y_true = []
+            y_pred = []
 
-        sigmoid_logits = []
+            sigmoid_logits = []
 
-        for data in tqdm(dataloader, total=len(dataloader)):
-            for k, v in data.items():
-                data[k] = v.to(device)
-            y_true.extend(data['labels'].cpu().numpy())
-            class_weight = class_weight.to(device)
-            logits, loss = model(input_ids=data['input_ids'],
-                                 attention_mask=data['attention_mask'],
-                                 labels=data['labels'],
-                                 class_weight=class_weight)
-            logits = logits.detach().cpu().numpy()
-            logits = sigmoid(logits)
-            sigmoid_logits.extend(logits)
+            for data in tqdm(dataloader, total=len(dataloader)):
+                for k, v in data.items():
+                    data[k] = v.to(device)
+                y_true.extend(data['labels'].cpu().numpy())
+                class_weight = class_weight.to(device)
+                logits, loss = model(input_ids=data['input_ids'],
+                                     attention_mask=data['attention_mask'],
+                                     labels=data['labels'],
+                                     class_weight=class_weight)
+                logits = logits.detach().cpu().numpy()
+                logits = sigmoid(logits)
+                sigmoid_logits.extend(logits)
 
-            for logit in logits:
-                y_pred.append(list(map(lambda x: 1 if x > 0.5 else 0, logit)))  # TODO: confirm criterion
+                for logit in logits:
+                    y_pred.append(list(map(lambda x: 1 if x > 0.5 else 0, logit)))  # TODO: confirm criterion
 
-            output_loss += loss.item()
+                output_loss += loss.item()
 
-        output_loss = output_loss / len(dataloader)
+            output_loss = output_loss / len(dataloader)
 
-        y_true = np.array(y_true)
-        y_pred = np.array(y_pred)
+            y_true = np.array(y_true)
+            y_pred = np.array(y_pred)
 
-        performance_metric = {}
-        for i in range(7):
-            class_metric = {}
-            f1_scores = []
-            class_metric['precision'] = precision_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
-            class_metric['recall'] = recall_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
-            f1 = f1_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
-            class_metric['f1'] = f1
-            f1_scores.append(f1)
-            performance_metric[f'class {i}'] = class_metric
-            performance_metric['macro f1'] = np.mean(f1_scores)
+            performance_metric = {}
+            for i in range(7):
+                class_metric = {}
+                f1_scores = []
+                class_metric['precision'] = precision_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+                class_metric['recall'] = recall_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+                f1 = f1_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+                class_metric['f1'] = f1
+                f1_scores.append(f1)
+                performance_metric[f'class {i}'] = class_metric
+                performance_metric['macro f1'] = np.mean(f1_scores)
 
-        y_true = np.apply_along_axis(lambda x : str(x), 1, y_true)
-        y_pred = np.apply_along_axis(lambda x : str(x), 1, y_pred)
-        sigmoid_logits = np.apply_along_axis(lambda x : str(x), 1, sigmoid_logits)
+            y_true = np.apply_along_axis(lambda x : str(x), 1, y_true)
+            y_pred = np.apply_along_axis(lambda x : str(x), 1, y_pred)
+            sigmoid_logits = np.apply_along_axis(lambda x : str(x), 1, sigmoid_logits)
 
-        # write output file
-        prediction_df = pd.DataFrame({'text': test_texts, 'y_true': y_true,
-                                      'y_pred': y_pred, 'sigmoid_logits': sigmoid_logits})
+            # write output file
+            prediction_df = pd.DataFrame({'text': test_texts, 'y_true': y_true,
+                                          'y_pred': y_pred, 'sigmoid_logits': sigmoid_logits})
 
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
 
-        prediction_df.to_csv(output_dir + 'prediction.csv', index=False)
+            prediction_df.to_csv(output_dir + 'prediction.csv', index=False)
 
-        # write to submission file
-        if not os.path.exists(submission_dir):
-            os.makedirs(submission_dir)
+            # write to submission file
+            if not os.path.exists(submission_dir):
+                os.makedirs(submission_dir)
 
-        with open(submission_dir + 'task2.txt', 'w') as f:
-            f.write('\n'.join(y_pred))
+            with open(submission_dir + 'task2.txt', 'w') as f:
+                f.write('\n'.join(y_pred))
+        elif args.config == 'multi-class-token':
+            y_true = []
+            y_pred = []
+
+            for data in tqdm(dataloader, total=len(dataloader)):
+                for k, v in data.items():
+                    data[k] = v.to(device)
+                #y_true.extend(data['labels'].cpu().numpy())
+                if class_weight is not None:
+                    class_weight = class_weight.to(device)
+                logits, loss = model(input_ids=data['input_ids'],
+                                     attention_mask=data['attention_mask'],
+                                     labels=data['labels'],
+                                     class_weight=class_weight)
+                logits = logits.detach().cpu().numpy()
+                predictions = np.argmax(logits, axis=2)
+                #print(predictions)
+                #print(predictions.shape)
+
+                # remove ignored index (special tokens)
+                labels = data['labels'].cpu().numpy()
+                true_labels = [[l for l in label if l != -100] for label in labels]
+                #print(true_labels)
+                y_true.extend(true_labels)
+
+                predictions = [
+                    [p for p, l in zip(prediction, label) if l != -100]
+                    for prediction, label in zip(predictions, true_labels)
+                ]
+                #print(predictions)
+                y_pred.extend(predictions)
+
+            #print(len(y_true), len(y_pred))
+            for i in range(len(y_true)):
+                assert len(y_true[i]) == len(y_pred[i])
+                #print(len(y_true[i]), len(y_pred[i]))
+
+            # transform to vector labels
+            true_vector_labels = list(map(get_vector_label, y_true))
+            predicted_vector_labels = list(map(get_vector_label, y_pred))
+            y_true = np.array(true_vector_labels)
+            y_pred = np.array(predicted_vector_labels)
+            #print(y_true)
+            #print(y_pred)
+
+            performance_metric = {}
+            for i in range(7):
+                class_metric = {}
+                f1_scores = []
+                class_metric['precision'] = precision_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+                class_metric['recall'] = recall_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+                f1 = f1_score(y_true[:, i], y_pred[:, i], pos_label=1, average='binary')
+                class_metric['f1'] = f1
+                f1_scores.append(f1)
+                performance_metric[f'class {i}'] = class_metric
+                performance_metric['macro f1'] = np.mean(f1_scores)
+
+            # write output file
+            y_true = np.apply_along_axis(lambda x: str(x), 1, y_true)
+            y_pred = np.apply_along_axis(lambda x: str(x), 1, y_pred)
+            prediction_df = pd.DataFrame({'text': test_texts, 'y_true': y_true, 'y_pred': y_pred})
+
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+            prediction_df.to_csv(output_dir + 'prediction.csv', index=False)
+
+            # write to submission file
+            if not os.path.exists(submission_dir):
+                os.makedirs(submission_dir)
+
+            with open(submission_dir + 'task2.txt', 'w') as f:
+                f.write('\n'.join(y_pred))
 
     return output_loss, performance_metric
